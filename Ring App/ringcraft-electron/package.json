@@ -1,0 +1,27 @@
+{
+  "name": "ring-crafting-database",
+  "version": "1.0.0",
+  "description": "Ring Crafting Cost Tracker",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.mayhem.ringcrafting",
+    "productName": "Ring Crafting Database",
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "RingCraftingDatabase.exe"
+    },
+    "files": ["src/**/*"],
+    "extraResources": []
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
