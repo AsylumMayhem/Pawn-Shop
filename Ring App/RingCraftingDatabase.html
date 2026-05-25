@@ -509,7 +509,19 @@ const DEFAULT_DB={
     {id:'6',name:'Emerald Ring',desc:'',labor:0,salePrice:30000,comps:[...bC('er'),{id:'er4',name:'Emerald',qty:30,unit:'pcs',cost:200,siId:null,ringId:null}]},
     {id:'7',name:'Ruby Ring',desc:'',labor:0,salePrice:30000,comps:[...bC('rr'),{id:'rr4',name:'Ruby',qty:25,unit:'pcs',cost:300,siId:null,ringId:null}]},
     {id:'8',name:'Citrine Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('cr'),{id:'cr4',name:'Citrine',qty:15,unit:'pcs',cost:50,siId:null,ringId:null}]},
-    {id:'9',name:'Onyx Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('or'),{id:'or4',name:'Onyx',qty:15,unit:'pcs',cost:200,siId:null,ringId:null}]}
+    {id:'9',name:'Onyx Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('or'),{id:'or4',name:'Onyx',qty:15,unit:'pcs',cost:200,siId:null,ringId:null}]},
+    {id:'10',name:'Ring Repair Kit',desc:'',labor:0,salePrice:18000,comps:[
+      {id:'rk1', name:'Glass',        qty:65,unit:'pcs',cost:5,   siId:null,ringId:null},
+      {id:'rk2', name:'Steel',        qty:20,unit:'pcs',cost:125, siId:null,ringId:null},
+      {id:'rk3', name:'Silver Powder',qty:2, unit:'g',  cost:0,   siId:'si1',ringId:null},
+      {id:'rk4', name:'Rubber',       qty:65,unit:'pcs',cost:10,  siId:null,ringId:null},
+      {id:'rk5', name:'Ceramics',     qty:2, unit:'pcs',cost:25,  siId:null,ringId:null},
+      {id:'rk6', name:'Metal Scrap',  qty:5, unit:'pcs',cost:75,  siId:null,ringId:null},
+      {id:'rk7', name:'Plastic',      qty:65,unit:'pcs',cost:10,  siId:null,ringId:null},
+      {id:'rk8', name:'Ring Base',    qty:1, unit:'pcs',cost:0,   siId:null,ringId:'3'},
+      {id:'rk9', name:'Aluminum',     qty:20,unit:'pcs',cost:90,  siId:null,ringId:null},
+      {id:'rk10',name:'Electronics',  qty:5, unit:'pcs',cost:75,  siId:null,ringId:null}
+    ]}
   ]
 };
 
@@ -553,6 +565,42 @@ function buildCraftingList(ring,sm,rm){
 function getAllMats(ring,sm,rm){
   var list=buildCraftingList(ring,sm,rm);
   return list.crafted.concat(list.raw.map(function(x){return Object.assign({},x,{type:'raw'});})).sort(function(a,b){return b.total-a.total;});
+}
+
+// Hierarchical flat list — sub-crafts expanded with children indented below them.
+// Duplicates preserved: Ceramics in Ring Wax Mold AND Ring Plaster are separate rows.
+function buildFlatTree(ring,sm,rm){
+  var rows=[];
+  function walk(c,multiplier,depth,parentPath){
+    var qty=(parseFloat(c.qty)||0)*multiplier;
+    var path,nodeKey;
+    if(c.ringId&&rm[c.ringId]){
+      var sub=rm[c.ringId];
+      var uc=ringCost(sub,sm,rm);
+      path=parentPath+'>'+sub.name;
+      nodeKey=path+':pcs';
+      rows.push({nodeKey:nodeKey,name:sub.name,qty:qty,unit:'pcs',unitCost:uc,type:'ring',depth:depth,total:qty*uc});
+      sub.comps.forEach(function(sc){walk(sc,qty,depth+1,path);});
+    } else if(c.siId&&sm[c.siId]){
+      var si=sm[c.siId];
+      var cpu=siCPU(si);
+      var crafts=qty/(parseFloat(si.oQty)||1);
+      path=parentPath+'>'+si.name;
+      nodeKey=path+':'+si.oUnit;
+      rows.push({nodeKey:nodeKey,name:si.name,qty:qty,unit:si.oUnit,unitCost:cpu,type:'si',depth:depth,total:qty*cpu});
+      si.inputs.forEach(function(inp){
+        var iQty=(parseFloat(inp.qty)||0)*crafts;
+        var iPath=path+'>'+inp.name;
+        rows.push({nodeKey:iPath+':'+inp.unit,name:inp.name,qty:iQty,unit:inp.unit,unitCost:parseFloat(inp.cost)||0,type:'raw',depth:depth+1,total:iQty*(parseFloat(inp.cost)||0)});
+      });
+    } else {
+      path=parentPath+'>'+c.name;
+      nodeKey=path+':'+c.unit;
+      rows.push({nodeKey:nodeKey,name:c.name,qty:qty,unit:c.unit,unitCost:parseFloat(c.cost)||0,type:'raw',depth:depth,total:qty*(parseFloat(c.cost)||0)});
+    }
+  }
+  ring.comps.forEach(function(c){walk(c,1,0,ring.id);});
+  return rows;
 }
 function loadDB(){try{var r=localStorage.getItem(DB_KEY);return r?JSON.parse(r):DEFAULT_DB;}catch(e){return DEFAULT_DB;}}
 function saveDB(db){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e){}}
@@ -1072,39 +1120,71 @@ function SalesTab(props){
   var saved=loadSales();
   var ordersState=useState(saved.orders||[]),setOrders=ordersState[1]; var orders=ordersState[0];
   var gsState=useState(saved.globalSupplied||[]),setGs=gsState[1]; var gs=gsState[0];
+  // rc = recipe checkboxes — visual only, does NOT affect cost
+  var rcState=useState(saved.recipeChecks||{}),setRc=rcState[1]; var rc=rcState[0];
   var roState=useState({}),setRo=roState[1]; var ro=roState[0];
   var maps=useMemo(function(){return makeMaps(db);},[db]);
   var sm=maps.sm,rm=maps.rm;
 
-  function persist(o,g){saveSales({orders:o,globalSupplied:g});}
-  function updO(o){setOrders(o);persist(o,gs);}
-  function updG(g){setGs(g);persist(orders,g);}
+  function persist(o,g,r){saveSales({orders:o,globalSupplied:g,recipeChecks:r||rc});}
+  function updO(o){setOrders(o);persist(o,gs,rc);}
+  function updG(g){setGs(g);persist(orders,g,rc);}
+  function updRc(r){setRc(r);persist(orders,gs,r);}
 
   function addOrder(){updO(orders.concat([{id:uid(),ringId:''}]));}
   function removeOrder(id){
     var no=orders.filter(function(o){return o.id!==id;});
-    var ng=gs.filter(function(s){return !(s.fromCheck&&s.fromOrderId===id);});
-    setOrders(no);setGs(ng);persist(no,ng);
+    // Clear recipe checks for this order
+    var nr=Object.assign({},rc);
+    Object.keys(nr).forEach(function(k){if(k.indexOf(id+'||')===0)delete nr[k];});
+    setOrders(no);setRc(nr);persist(no,gs,nr);
   }
   function changeRing(oid,rid){
     var no=orders.map(function(o){return o.id===oid?Object.assign({},o,{ringId:rid}):o;});
-    var ng=gs.filter(function(s){return !(s.fromCheck&&s.fromOrderId===oid);});
-    setOrders(no);setGs(ng);persist(no,ng);
+    var nr=Object.assign({},rc);
+    Object.keys(nr).forEach(function(k){if(k.indexOf(oid+'||')===0)delete nr[k];});
+    setOrders(no);setRc(nr);persist(no,gs,nr);
     setRo(function(r){var x=Object.assign({},r);x[oid]=false;return x;});
   }
-  function checkMat(oid,name,unit,qty,unitCost,checked){
-    var ng=gs.filter(function(s){return !(s.name===name&&s.unit===unit&&s.fromCheck&&s.fromOrderId===oid);});
-    if(checked)ng=ng.concat([{id:uid(),name:name,qty:qty,unit:unit,unitCost:unitCost,fromCheck:true,fromOrderId:oid}]);
-    updG(ng);
+  // Recipe checkbox helpers — visual only
+  function isRcChecked(oid,nodeKey){return !!(rc[oid+'||'+nodeKey]);}
+  function setRcItem(oid,nodeKey,checked){
+    var nr=Object.assign({},rc);
+    if(checked)nr[oid+'||'+nodeKey]=true; else delete nr[oid+'||'+nodeKey];
+    updRc(nr);
+  }
+  function getAllDescendants(mats,idx){
+    var pd=mats[idx].depth,desc=[];
+    for(var i=idx+1;i<mats.length;i++){
+      if(mats[i].depth<=pd)break;
+      desc.push(mats[i]);
+    }
+    return desc;
+  }
+  function headerRcChecked(mats,idx,oid){
+    var desc=getAllDescendants(mats,idx);
+    return desc.length>0&&desc.every(function(d){return isRcChecked(oid,d.nodeKey);});
+  }
+  function toggleHeaderRc(oid,idx,mats,currentlyChecked){
+    var desc=getAllDescendants(mats,idx);
+    var nr=Object.assign({},rc);
+    desc.forEach(function(d){
+      if(currentlyChecked)delete nr[oid+'||'+d.nodeKey];
+      else nr[oid+'||'+d.nodeKey]=true;
+    });
+    updRc(nr);
   }
   function removeSupply(id){updG(gs.filter(function(s){return s.id!==id;}));}
 
+  // Cost calculation uses ONLY manually-added gs items
   var totalSaving=gs.reduce(function(s,x){return s+(+x.qty||0)*(+x.unitCost||0);},0);
   var grandFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm):0);},0);
   var grandSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice:0);},0);
   var grandYours=Math.max(0,grandFull-totalSaving);
   var adjustedSale=Math.max(0,grandSale-totalSaving);
-  var profit=adjustedSale-grandYours;
+  var commission=adjustedSale*0.03;
+  var netSale=adjustedSale-commission;
+  var profit=netSale-grandYours;
 
   var allMats=useMemo(function(){
     var map={};
@@ -1139,7 +1219,7 @@ function SalesTab(props){
         )
       :orders.map(function(order,idx){
           var ring=rm[order.ringId];
-          var mats=ring?getAllMats(ring,sm,rm):[];
+          var mats=ring?buildFlatTree(ring,sm,rm):[];
           var rOpen=!!ro[order.id];
           return h('div',{key:order.id,className:'oc'},
             h('div',{className:'oc-hdr'},
@@ -1161,13 +1241,25 @@ function SalesTab(props){
                   h('span',{className:'rt-chev'},rOpen?'\u25b2':'\u25bc')
                 ),
                 rOpen&&h('div',{className:'rdrop'},mats.map(function(mat,mi){
-                  var isS=gs.some(function(s){return s.name===mat.name&&s.unit===mat.unit&&s.fromCheck&&s.fromOrderId===order.id;});
+                  var isHeader=mat.type==='ring'||mat.type==='si';
+                  var hChecked=isHeader?headerRcChecked(mats,mi,order.id):false;
+                  var cbChecked=isHeader?hChecked:isRcChecked(order.id,mat.nodeKey);
+                  var indent=mat.depth*18;
                   var tcls=mat.type==='raw'?'lt-raw':mat.type==='si'?'lt-si':'lt-ring';
                   var tlbl=mat.type==='raw'?'raw':mat.type==='si'?'secondary':'sub-craft';
-                  return h('div',{key:mi,className:'mr'},
-                    h('input',{type:'checkbox',className:'mck',checked:isS,onChange:function(e){checkMat(order.id,mat.name,mat.unit,mat.qty,mat.unitCost,e.target.checked);}}),
-                    h(GemDot,{name:mat.name,style:{flexShrink:0}}),
-                    h('span',{className:'mn'+(isS?' strk':'')},mat.name),
+                  var bgColor=isHeader&&mat.depth===0?'rgba(255,255,255,.025)':isHeader?'rgba(255,255,255,.015)':'transparent';
+                  var borderTop=isHeader&&mat.depth===0?'1px solid rgba(255,255,255,.06)':'none';
+                  return h('div',{key:mi,className:'mr',style:{paddingLeft:(9+indent)+'px',background:bgColor,borderTop:borderTop}},
+                    h('input',{type:'checkbox',className:'mck',checked:cbChecked,
+                      onChange:function(){
+                        if(isHeader) toggleHeaderRc(order.id,mi,mats,hChecked);
+                        else setRcItem(order.id,mat.nodeKey,!cbChecked);
+                      }
+                    }),
+                    isHeader
+                      ?h('span',{style:{fontSize:9,color:mat.type==='si'?'#E07AE0':'#8AE064',flexShrink:0,marginRight:2}},mat.type==='si'?'\u25ce':'\u25c8')
+                      :h(GemDot,{name:mat.name,style:{flexShrink:0}}),
+                    h('span',{className:'mn'+(cbChecked?' strk':''),style:{fontWeight:isHeader?600:400,color:isHeader?'var(--tx)':'inherit',fontSize:isHeader?13:12}},mat.name),
                     h('span',{className:'mtype '+tcls},tlbl),
                     h('span',{className:'mqty'},fq(mat.qty),' ',mat.unit),
                     h('span',{className:'mcost'},fmt(mat.total))
@@ -1240,13 +1332,14 @@ function SalesTab(props){
           h('hr',{className:'fd'}),
           h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--gold)'}},'Listed sale price'),h('span',{className:'oq-val',style:{color:'var(--gold-light)'}},fmt(grandSale))),
           totalSaving>0&&h('div',{className:'oq-row'},h('span',{className:'oq-lbl oq-green'},'\u2212 Customer supplied materials'),h('span',{className:'oq-val oq-green'},'-'+fmt(totalSaving))),
+          h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission fee'),h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(commission))),
           h('div',{className:'oq-tot',style:{background:'rgba(106,201,74,.07)',border:'1px solid rgba(106,201,74,.18)',marginTop:6}},
             h('span',{className:'oq-tot-lbl',style:{color:'#8AE064'}},'Total Cost Owed to You'),
-            h('span',{className:'oq-tot-val',style:{color:'#8AE064'}},fmt(adjustedSale))
+            h('span',{className:'oq-tot-val',style:{color:'#8AE064'}},fmt(netSale))
           ),
           h('div',{className:'oq-row',style:{marginTop:5}},h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Your crafting cost'),h('span',{className:'oq-val',style:{fontSize:12}},fmt(grandYours))),
           h('div',{className:'oq-row'},
-            h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Profit'),
+            h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Profit after commission'),
             h('span',{className:'oq-val',style:{fontSize:12,color:profit>=0?'#8AE064':'var(--ruby)'}},( profit>=0?'+':'')+fmt(profit))
           )
         )
