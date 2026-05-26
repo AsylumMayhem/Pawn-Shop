@@ -474,9 +474,9 @@ const DEFAULT_DB={
   si:[
     {id:'si1',name:'Silver Powder',oQty:5,oUnit:'g',inputs:[{id:'i1',name:'Silver Ingot',qty:3,unit:'pcs',cost:35}]},
     {id:'si2',name:'Celestial Alloy',oQty:1,oUnit:'pcs',inputs:[
-      {id:'ca1',name:'Celestial Core',qty:3,unit:'pcs',cost:200},
+      {id:'ca1',name:'Celestial Core',qty:3,unit:'pcs',cost:100},
       {id:'ca2',name:'Sapphire',qty:5,unit:'pcs',cost:285},
-      {id:'ca3',name:'Onyx',qty:5,unit:'pcs',cost:200},
+      {id:'ca3',name:'Onyx',qty:5,unit:'pcs',cost:75},
       {id:'ca4',name:'Aquamarine',qty:5,unit:'pcs',cost:50},
       {id:'ca5',name:'Diamond',qty:5,unit:'pcs',cost:235},
       {id:'ca6',name:'Ruby',qty:5,unit:'pcs',cost:300},
@@ -487,7 +487,7 @@ const DEFAULT_DB={
   ],
   rings:[
     {id:'1',name:'Ring Wax Mold',desc:'',labor:0,salePrice:0,comps:[
-      {id:'c1',name:'Steel',qty:5,unit:'pcs',cost:125,siId:null,ringId:null},
+      {id:'c1',name:'Steel',qty:5,unit:'pcs',cost:90,siId:null,ringId:null},
       {id:'c2',name:'Bee Wax',qty:20,unit:'pcs',cost:85,siId:null,ringId:null},
       {id:'c3',name:'Ceramics',qty:5,unit:'pcs',cost:25,siId:null,ringId:null}
     ]},
@@ -509,10 +509,10 @@ const DEFAULT_DB={
     {id:'6',name:'Emerald Ring',desc:'',labor:0,salePrice:30000,comps:[...bC('er'),{id:'er4',name:'Emerald',qty:30,unit:'pcs',cost:200,siId:null,ringId:null}]},
     {id:'7',name:'Ruby Ring',desc:'',labor:0,salePrice:30000,comps:[...bC('rr'),{id:'rr4',name:'Ruby',qty:25,unit:'pcs',cost:300,siId:null,ringId:null}]},
     {id:'8',name:'Citrine Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('cr'),{id:'cr4',name:'Citrine',qty:15,unit:'pcs',cost:50,siId:null,ringId:null}]},
-    {id:'9',name:'Onyx Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('or'),{id:'or4',name:'Onyx',qty:15,unit:'pcs',cost:200,siId:null,ringId:null}]},
+    {id:'9',name:'Onyx Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('or'),{id:'or4',name:'Onyx',qty:15,unit:'pcs',cost:75,siId:null,ringId:null}]},
     {id:'10',name:'Ring Repair Kit',desc:'',labor:0,salePrice:18000,comps:[
       {id:'rk1', name:'Glass',        qty:65,unit:'pcs',cost:5,   siId:null,ringId:null},
-      {id:'rk2', name:'Steel',        qty:20,unit:'pcs',cost:125, siId:null,ringId:null},
+      {id:'rk2', name:'Steel',        qty:20,unit:'pcs',cost:90, siId:null,ringId:null},
       {id:'rk3', name:'Silver Powder',qty:2, unit:'g',  cost:0,   siId:'si1',ringId:null},
       {id:'rk4', name:'Rubber',       qty:65,unit:'pcs',cost:10,  siId:null,ringId:null},
       {id:'rk5', name:'Ceramics',     qty:2, unit:'pcs',cost:25,  siId:null,ringId:null},
@@ -1131,8 +1131,11 @@ function SalesTab(props){
   function updG(g){setGs(g);persist(orders,g,rc);}
   function updRc(r){setRc(r);persist(orders,gs,r);}
 
-  function addOrder(){updO(orders.concat([{id:uid(),ringId:''}]));}
-  function removeOrder(id){
+  function addOrder(){updO(orders.concat([{id:uid(),ringId:'',qty:1}]));}
+  function changeQty(oid,qty){
+    var q=Math.max(1,parseInt(qty)||1);
+    updO(orders.map(function(o){return o.id===oid?Object.assign({},o,{qty:q}):o;}));
+  }  function removeOrder(id){
     var no=orders.filter(function(o){return o.id!==id;});
     // Clear recipe checks for this order
     var nr=Object.assign({},rc);
@@ -1178,8 +1181,8 @@ function SalesTab(props){
 
   // Cost calculation uses ONLY manually-added gs items
   var totalSaving=gs.reduce(function(s,x){return s+(+x.qty||0)*(+x.unitCost||0);},0);
-  var grandFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm):0);},0);
-  var grandSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice:0);},0);
+  var grandFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm)*(o.qty||1):0);},0);
+  var grandSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice*(o.qty||1):0);},0);
   var grandYours=Math.max(0,grandFull-totalSaving);
   var adjustedSale=Math.max(0,grandSale-totalSaving);
   var commission=adjustedSale*0.03;
@@ -1211,6 +1214,53 @@ function SalesTab(props){
   }
   function clearAll(){if(!confirm('Clear all orders?'))return;setOrders([]);setGs([]);persist([],[]);}
 
+  // Create pending order
+  var showCreateState=useState(false),setShowCreate=showCreateState[1]; var showCreate=showCreateState[0];
+  var custNameState=useState(''),setCustName=custNameState[1]; var custName=custNameState[0];
+  var custIdState=useState(''),setCustId=custIdState[1]; var custId=custIdState[0];
+  var custPhoneState=useState(''),setCustPhone=custPhoneState[1]; var custPhone=custPhoneState[0];
+
+  function submitOrder(){
+    if(!custName.trim()){alert('Please enter a customer name.');return;}
+    var hasRings=orders.some(function(o){return !!o.ringId;});
+    if(!hasRings){alert('No rings selected.');return;}
+    // Snapshot current calculations
+    var snapFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm)*(o.qty||1):0);},0);
+    var snapSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice*(o.qty||1):0);},0);
+    var snapSaving=gs.reduce(function(s,x){return s+(+x.qty||0)*(+x.unitCost||0);},0);
+    var snapYours=Math.max(0,snapFull-snapSaving);
+    var snapAdj=Math.max(0,snapSale-snapSaving);
+    var snapComm=snapAdj*0.03;
+    var snapNet=snapAdj-snapComm;
+    var snapProfit=snapNet-snapYours;
+    var newOrder={
+      id:uid(),
+      customerName:custName.trim(),
+      citizenId:custId.trim(),
+      phone:custPhone.trim(),
+      createdAt:Date.now(),
+      status:'pending',
+      notes:'',
+      items:orders.filter(function(o){return !!o.ringId;}).map(function(o){
+        var r=rm[o.ringId];
+        return {ringId:o.ringId,name:r?r.name:'',qty:o.qty||1,unitCost:r?ringCost(r,sm,rm):0};
+      }),
+      suppliedMaterials:gs.map(function(s){return Object.assign({},s);}),
+      grandFull:snapFull,
+      totalSaving:snapSaving,
+      grandYours:snapYours,
+      grandSale:snapSale,
+      commission:snapComm,
+      netSale:snapNet,
+      profit:snapProfit
+    };
+    var existing=loadPendingOrders();
+    savePendingOrders(existing.concat([newOrder]));
+    setOrders([]);setGs([]);setRc({});persist([],[],{});
+    setCustName('');setCustId('');setCustPhone('');setShowCreate(false);
+    if(props.onCreateOrder) props.onCreateOrder();
+  }
+
   return h('div',null,
     orders.length===0
       ?h('div',{style:{background:'var(--onyx-mid)',border:'1px solid var(--onyx-border)',borderRadius:6,padding:28,textAlign:'center'}},
@@ -1219,20 +1269,28 @@ function SalesTab(props){
         )
       :orders.map(function(order,idx){
           var ring=rm[order.ringId];
+          var orderQty=order.qty||1;
+          var unitCost=ring?ringCost(ring,sm,rm):0;
+          var orderTotal=unitCost*orderQty;
           var mats=ring?buildFlatTree(ring,sm,rm):[];
           var rOpen=!!ro[order.id];
           return h('div',{key:order.id,className:'oc'},
             h('div',{className:'oc-hdr'},
               h('span',{className:'oc-num'},'Item '+(idx+1)),
               h('span',{className:'oc-name'},ring?ring.name:'Select a ring'),
-              ring&&h('span',{className:'oc-cpill'},fmt(ringCost(ring,sm,rm))),
+              ring&&h('span',{className:'oc-cpill'},orderQty>1?orderQty+' \u00d7 '+fmt(unitCost)+' = '+fmt(orderTotal):fmt(unitCost)),
               h('button',{className:'ib d',style:{marginLeft:8},onClick:function(){removeOrder(order.id);}},'\u2715')
             ),
             h('div',{className:'oc-body'},
-              h(FG,{label:'Ring',style:{marginBottom:11}},
-                h('select',{value:order.ringId,onChange:function(e){changeRing(order.id,e.target.value);},style:{width:'100%',fontSize:14,padding:'6px 8px',background:'var(--onyx-mid)',color:'var(--tx)',border:'1px solid var(--onyx-border)',borderRadius:6}},
-                  h('option',{value:''},'\u2014 Select a ring \u2014'),
-                  db.rings.filter(function(r){return r.comps.length>0;}).map(function(r){return h('option',{key:r.id,value:r.id},r.name+' \u2014 '+fmt(ringCost(r,sm,rm)));})
+              h('div',{className:'fr',style:{marginBottom:11,alignItems:'flex-end',gap:8}},
+                h(FG,{label:'Ring',style:{flex:'1 1 200px'}},
+                  h('select',{value:order.ringId,onChange:function(e){changeRing(order.id,e.target.value);},style:{width:'100%',fontSize:14,padding:'6px 8px',background:'var(--onyx-mid)',color:'var(--tx)',border:'1px solid var(--onyx-border)',borderRadius:6}},
+                    h('option',{value:''},'\u2014 Select a ring \u2014'),
+                    db.rings.filter(function(r){return r.comps.length>0;}).map(function(r){return h('option',{key:r.id,value:r.id},r.name+' \u2014 '+fmt(ringCost(r,sm,rm)));})
+                  )
+                ),
+                h(FG,{label:'Qty',style:{flex:'0 0 80px'}},
+                  h('input',{type:'number',min:1,step:1,value:orderQty,onChange:function(e){changeQty(order.id,e.target.value);},style:{width:'100%',fontSize:14,padding:'6px 8px',background:'var(--onyx-mid)',color:'var(--tx)',border:'1px solid var(--onyx-border)',borderRadius:6,textAlign:'center'}})
                 )
               ),
               ring&&h('div',null,
@@ -1311,7 +1369,12 @@ function SalesTab(props){
       h('div',{className:'sp-body'},
         orders.length>1&&orders.map(function(o,i){
           var r=rm[o.ringId];
-          return r&&h('div',{key:o.id,className:'oq-row'},h('span',{className:'oq-lbl'},'Item '+(i+1)+' \u2014 '+r.name),h('span',{className:'oq-val'},fmt(ringCost(r,sm,rm))));
+          var oq=o.qty||1;
+          var oc=r?ringCost(r,sm,rm)*oq:0;
+          return r&&h('div',{key:o.id,className:'oq-row'},
+            h('span',{className:'oq-lbl'},'Item '+(i+1)+' \u2014 '+r.name+(oq>1?' \u00d7 '+oq:'')),
+            h('span',{className:'oq-val'},fmt(oc))
+          );
         }).filter(Boolean),
         h('div',{className:'oq-row'},h('span',{className:'oq-lbl'},orders.length>1?'Combined recipe cost':'Full recipe cost'),h('span',{className:'oq-val'},fmt(grandFull))),
         totalSaving>0&&h('div',null,
@@ -1344,11 +1407,328 @@ function SalesTab(props){
           )
         )
       )
+    ),
+    // Create Pending Order panel
+    orders.some(function(o){return !!o.ringId;})&&h('div',{style:{marginTop:12}},
+      !showCreate
+        ?h('button',{className:'btn btn-gold',style:{width:'100%',justifyContent:'center',padding:'10px'},onClick:function(){setShowCreate(true);}},'\u2b50 Create Pending Order')
+        :h('div',{className:'sp-block'},
+            h('div',{className:'sp-hdr'},h('span',{className:'sp-title',style:{color:'var(--gold-light)'}},'\u2b50 New Pending Order')),
+            h('div',{className:'sp-body'},
+              h('div',{className:'fr',style:{marginBottom:8}},
+                h(FG,{label:'Customer Name *',style:{flex:'2 1 180px'}},h('input',{value:custName,onChange:function(e){setCustName(e.target.value);},placeholder:'e.g. John Smith',style:{fontSize:14}})),
+                h(FG,{label:'Citizen ID',style:{flex:'1 1 130px'}},h('input',{value:custId,onChange:function(e){setCustId(e.target.value);},placeholder:'e.g. CID-12345',style:{fontSize:14}})),
+                h(FG,{label:'Phone Number',style:{flex:'1 1 140px'}},h('input',{value:custPhone,onChange:function(e){setCustPhone(e.target.value);},placeholder:'e.g. 555-1234',style:{fontSize:14}}))
+              ),
+              h('div',{style:{background:'var(--onyx-light)',borderRadius:4,padding:'10px 12px',marginBottom:10,fontSize:13,color:'var(--txm)'}},
+                h('strong',{style:{color:'var(--tx)',display:'block',marginBottom:4}},
+                  orders.filter(function(o){return !!o.ringId;}).length+' ring'+(orders.filter(function(o){return !!o.ringId;}).length>1?'s':'')+' \u2014 Total owed: ',
+                  h('span',{style:{color:'#8AE064'}},fmt(netSale))
+                ),
+                orders.filter(function(o){return !!o.ringId;}).map(function(o,i){
+                  var r=rm[o.ringId];
+                  return r&&h('div',{key:i},'\u00b7 '+(o.qty||1)+'x '+r.name+(r.salePrice?' @ '+fmt(r.salePrice*(o.qty||1)):''));
+                }),
+                gs.length>0&&h('div',{style:{marginTop:4,color:'#8AE064'}},'\u2713 '+gs.length+' customer-supplied item'+(gs.length>1?'s':'')+' included')
+              ),
+              h('div',{style:{display:'flex',gap:7}},
+                h('button',{className:'btn btn-gold',onClick:submitOrder},'\u2713 Confirm Order'),
+                h('button',{className:'btn btn-ghost btn-sm',onClick:function(){setShowCreate(false);}    },'Cancel')
+              )
+            )
+          )
+    )
+  );
+}
+var ORDERS_KEY='ring-crafting-pending-v1';
+function loadPendingOrders(){try{var r=localStorage.getItem(ORDERS_KEY);return r?JSON.parse(r):[];}catch(e){return[];}}
+function savePendingOrders(o){try{localStorage.setItem(ORDERS_KEY,JSON.stringify(o));}catch(e){}}
+
+// ── Pending Orders Tab ────────────────────────────────────────────────────
+function PendingOrdersTab(props){
+  var db=props.db;
+  var poState=useState(function(){return loadPendingOrders();}),setPo=poState[1]; var po=poState[0];
+  var viewState=useState(null),setView=viewState[1]; var view=viewState[0]; // id of expanded order
+  var maps=useMemo(function(){return makeMaps(db);},[db]);
+  var sm=maps.sm,rm=maps.rm;
+
+  function deleteOrder(id){if(!confirm('Delete this pending order?'))return;var n=po.filter(function(o){return o.id!==id;});setPo(n);savePendingOrders(n);}
+  function markComplete(id){var n=po.map(function(o){return o.id===id?Object.assign({},o,{status:'completed',completedAt:Date.now()}):o;});setPo(n);savePendingOrders(n);}
+  function markPending(id){var n=po.map(function(o){return o.id===id?Object.assign({},o,{status:'pending',completedAt:null}):o;});setPo(n);savePendingOrders(n);}
+
+  var pending=po.filter(function(o){return o.status!=='completed';});
+  var completed=po.filter(function(o){return o.status==='completed';});
+
+  function renderOrderCard(order){
+    var isOpen=view===order.id;
+    var isComplete=order.status==='completed';
+    return h('div',{key:order.id,style:{background:'var(--onyx-mid)',border:'1px solid '+(isComplete?'rgba(106,201,74,.25)':'var(--onyx-border)'),borderRadius:6,marginBottom:8,overflow:'hidden'}},
+      // Card header
+      h('div',{style:{padding:'12px 14px',display:'flex',alignItems:'center',gap:10,background:isComplete?'rgba(106,201,74,.04)':'rgba(201,151,74,.03)',cursor:'pointer'},onClick:function(){setView(isOpen?null:order.id);}},
+        h('div',{style:{flex:1}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+            h('span',{style:{fontFamily:'Cinzel,serif',fontSize:13,fontWeight:600,color:isComplete?'#8AE064':'var(--gold-light)'}},order.customerName||'Unnamed Customer'),
+            order.citizenId&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.08em',textTransform:'uppercase',background:'rgba(255,255,255,.06)',border:'1px solid var(--onyx-border)',padding:'1px 7px',borderRadius:100,color:'var(--txm)'}},'ID: '+order.citizenId),
+            isComplete&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.08em',textTransform:'uppercase',background:'rgba(106,201,74,.12)',border:'1px solid rgba(106,201,74,.2)',padding:'1px 7px',borderRadius:100,color:'#8AE064'}},'\u2713 Completed')
+          ),
+          h('div',{style:{fontSize:12,color:'var(--txm)',marginTop:3,display:'flex',gap:12,flexWrap:'wrap'}},
+            order.phone&&h('span',null,'\u260e '+order.phone),
+            h('span',null,order.items.length+' item'+(order.items.length>1?'s':'')+(order.items.some(function(i){return(i.qty||1)>1;})?'':'')),
+            h('span',null,'Created: '+new Date(order.createdAt).toLocaleDateString())
+          )
+        ),
+        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          h('span',{style:{fontFamily:'Cinzel,serif',fontSize:13,fontWeight:600,color:isComplete?'#8AE064':'var(--gold-light)'}},fmt(order.netSale)),
+          h('span',{style:{fontSize:9,color:'var(--txm)'}},isOpen?'\u25b2':'\u25bc')
+        )
+      ),
+      // Expanded detail
+      isOpen&&h('div',{style:{padding:'14px 14px',borderTop:'1px solid var(--onyx-border)'}},
+        // Items ordered
+        h('div',{style:{marginBottom:12}},
+          h('div',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--gold)',marginBottom:7}},'Items Ordered'),
+          order.items.map(function(item,i){
+            var r=rm[item.ringId];
+            var oq=item.qty||1;
+            var uc=r?ringCost(r,sm,rm):item.unitCost||0;
+            return h('div',{key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',borderRadius:4,background:'rgba(255,255,255,.02)',marginBottom:3}},
+              h('div',{className:'gdot '+(r?gemCls(r.name):'g-x')}),
+              h('span',{style:{flex:1,fontSize:14}},r?r.name:item.name||'Unknown'),
+              oq>1&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:11,color:'var(--txm)'}},'\u00d7 '+oq),
+              h('span',{style:{fontSize:13,color:'var(--txm)',fontVariantNumeric:'tabular-nums'}},fmt(uc*oq))
+            );
+          })
+        ),
+        // Customer supplied
+        order.suppliedMaterials&&order.suppliedMaterials.length>0&&h('div',{style:{marginBottom:12}},
+          h('div',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.14em',textTransform:'uppercase',color:'#8AE064',marginBottom:7}},'\u2713 Customer Supplied'),
+          order.suppliedMaterials.map(function(s,i){
+            var sv=(+s.qty||0)*(+s.unitCost||0);
+            return h('div',{key:i,style:{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',borderRadius:4,background:'rgba(106,201,74,.05)',border:'1px solid rgba(106,201,74,.12)',marginBottom:3}},
+              h('div',{className:'gdot '+gemCls(s.name)}),
+              h('span',{style:{flex:1,fontSize:13}},s.name),
+              h('span',{style:{fontSize:12,color:'var(--txm)'}},fq(s.qty)+' '+s.unit+' @ '+fmt(s.unitCost)),
+              h('span',{style:{fontSize:12,color:'#8AE064'}},'-'+fmt(sv))
+            );
+          })
+        ),
+        // Quote breakdown
+        h('div',{style:{background:'rgba(201,151,74,.05)',border:'1px solid rgba(201,151,74,.15)',borderRadius:4,padding:'10px 12px',marginBottom:12}},
+          h('div',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--gold)',marginBottom:8}},'Quote Breakdown'),
+          h('div',{className:'oq-row'},h('span',{className:'oq-lbl'},'Full recipe cost'),h('span',{className:'oq-val'},fmt(order.grandFull))),
+          order.totalSaving>0&&h('div',{className:'oq-row'},h('span',{className:'oq-lbl oq-green'},'\u2212 Customer supplied'),h('span',{className:'oq-val oq-green'},'-'+fmt(order.totalSaving))),
+          h('div',{className:'oq-row'},h('span',{className:'oq-lbl'},'Your crafting cost'),h('span',{className:'oq-val'},fmt(order.grandYours))),
+          order.grandSale>0&&h('div',null,
+            h('div',{style:{borderTop:'1px solid rgba(255,255,255,.06)',margin:'6px 0'}}),
+            h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--gold)'}},'Listed sale price'),h('span',{className:'oq-val',style:{color:'var(--gold-light)'}},fmt(order.grandSale))),
+            order.totalSaving>0&&h('div',{className:'oq-row'},h('span',{className:'oq-lbl oq-green'},'\u2212 Supplied deduction'),h('span',{className:'oq-val oq-green'},'-'+fmt(order.totalSaving))),
+            h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission'),h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(order.commission))),
+            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',borderRadius:4,background:'rgba(106,201,74,.07)',border:'1px solid rgba(106,201,74,.18)',marginTop:6}},
+              h('span',{style:{fontFamily:'Cinzel,serif',fontSize:10,fontWeight:600,letterSpacing:'.1em',textTransform:'uppercase',color:'#8AE064'}},'Total Owed to You'),
+              h('span',{style:{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:600,color:'#8AE064'}},fmt(order.netSale))
+            ),
+            h('div',{className:'oq-row',style:{marginTop:4}},h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Profit after commission'),h('span',{className:'oq-val',style:{fontSize:12,color:order.profit>=0?'#8AE064':'var(--ruby)'}},( order.profit>=0?'+':'')+fmt(order.profit)))
+          )
+        ),
+        // Notes
+        h('div',{style:{marginBottom:10}},
+          h('div',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--txm)',marginBottom:5}},'Notes'),
+          h('textarea',{value:order.notes||'',onChange:function(e){var n=po.map(function(o){return o.id===order.id?Object.assign({},o,{notes:e.target.value}):o;});setPo(n);savePendingOrders(n);},placeholder:'Add notes about this order...',style:{width:'100%',background:'var(--onyx-light)',color:'var(--tx)',border:'1px solid var(--onyx-border)',borderRadius:4,padding:'8px 10px',fontSize:13,fontFamily:'Crimson Pro,serif',resize:'vertical',minHeight:60}})
+        ),
+        // Actions
+        h('div',{style:{display:'flex',gap:7,flexWrap:'wrap'}},
+          !isComplete
+            ?h('button',{className:'btn btn-gold btn-sm',onClick:function(){markComplete(order.id);}},'\u2713 Mark as Completed')
+            :h('button',{className:'btn btn-ghost btn-sm',onClick:function(){markPending(order.id);}},'\u21ba Reopen'),
+          h('button',{className:'btn btn-danger btn-sm',onClick:function(){deleteOrder(order.id);}},'\u2715 Delete Order')
+        )
+      )
+    );
+  }
+
+  return h('div',null,
+    // Stats bar
+    po.length>0&&h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:9,marginBottom:20}},
+      h('div',{className:'mc'},h('div',{className:'mc-lbl'},'Pending Orders'),h('div',{className:'mc-val'},pending.length)),
+      h('div',{className:'mc'},h('div',{className:'mc-lbl'},'Completed'),h('div',{className:'mc-val',style:{color:'#8AE064'}},completed.length)),
+      h('div',{className:'mc'},h('div',{className:'mc-lbl'},'Pending Revenue'),h('div',{className:'mc-val',style:{fontSize:15,paddingTop:2}},fmt(pending.reduce(function(s,o){return s+o.netSale;},0)))),
+      h('div',{className:'mc'},h('div',{className:'mc-lbl'},'Total Revenue'),h('div',{className:'mc-val',style:{fontSize:15,paddingTop:2}},fmt(po.reduce(function(s,o){return s+o.netSale;},0))))
+    ),
+    // Empty state
+    po.length===0&&h('div',{style:{background:'var(--onyx-mid)',border:'1px solid var(--onyx-border)',borderRadius:6,padding:32,textAlign:'center'}},
+      h('div',{style:{fontFamily:'Cinzel,serif',fontSize:11,letterSpacing:'.12em',textTransform:'uppercase',color:'var(--txm)',marginBottom:7}},'No Pending Orders'),
+      h('div',{style:{fontSize:13,color:'var(--txm)',fontStyle:'italic'}},'Go to the Sales tab and click \u201cCreate Pending Order\u201d')
+    ),
+    // Pending list
+    pending.length>0&&h('div',null,
+      h('div',{className:'sh'},h('h2',null,'\u25d0 Pending'),h('div',{className:'sh-line'})),
+      pending.map(function(o){return renderOrderCard(o);})
+    ),
+    // Completed list
+    completed.length>0&&h('div',null,
+      h('div',{className:'sh',style:{marginTop:20}},h('h2',null,'\u2713 Completed'),h('div',{className:'sh-line'})),
+      completed.map(function(o){return renderOrderCard(o);})
     )
   );
 }
 
-// ── App ──────────────────────────────────────────────────────────────────
+// ── Material Buying Tab ───────────────────────────────────────────────────
+var MAT_BUY_KEY='ring-crafting-matbuy-v1';
+var DEFAULT_MATS=[
+  {id:'mb1', category:'Uncut Gems', name:'Uncut Sapphire',    price:140, qty:''},
+  {id:'mb2', category:'Uncut Gems', name:'Uncut Diamond',     price:170, qty:''},
+  {id:'mb3', category:'Uncut Gems', name:'Uncut Ruby',        price:150, qty:''},
+  {id:'mb4', category:'Uncut Gems', name:'Uncut Emerald',     price:125, qty:''},
+  {id:'mb5', category:'Uncut Gems', name:'Uncut Citrine',     price:25,  qty:''},
+  {id:'mb6', category:'Uncut Gems', name:'Uncut Aquamarine',  price:25,  qty:''},
+  {id:'mb7', category:'Uncut Gems', name:'Uncut Onyx',        price:50,  qty:''},
+  {id:'mb8', category:'Cut Gems',   name:'Sapphire',          price:280, qty:''},
+  {id:'mb9', category:'Cut Gems',   name:'Diamond',           price:230, qty:''},
+  {id:'mb10',category:'Cut Gems',   name:'Ruby',              price:300, qty:''},
+  {id:'mb11',category:'Cut Gems',   name:'Emerald',           price:200, qty:''},
+  {id:'mb12',category:'Cut Gems',   name:'Citrine',           price:50,  qty:''},
+  {id:'mb13',category:'Cut Gems',   name:'Aquamarine',        price:50,  qty:''},
+  {id:'mb14',category:'Cut Gems',   name:'Onyx',              price:75,  qty:''},
+  {id:'mb15',category:'Metals',     name:'Gold Ore',          price:100, qty:''},
+  {id:'mb16',category:'Metals',     name:'Gold Bar',          price:300, qty:''},
+];
+function loadMatBuy(){try{var r=localStorage.getItem(MAT_BUY_KEY);return r?JSON.parse(r):DEFAULT_MATS;}catch(e){return DEFAULT_MATS;}}
+function saveMatBuy(m){try{localStorage.setItem(MAT_BUY_KEY,JSON.stringify(m));}catch(e){}}
+
+function MatBuyTab(){
+  var matsState=useState(function(){return loadMatBuy();}),setMats=matsState[1]; var mats=matsState[0];
+  var editPriceState=useState(null),setEditPrice=editPriceState[1]; var editPrice=editPriceState[0]; // id being edited
+
+  function update(id,field,val){
+    var n=mats.map(function(m){
+      if(m.id!==id)return m;
+      var upd=Object.assign({},m);
+      if(field==='qty'){
+        upd.qty = val==='' ? '' : Math.max(0,parseInt(val)||0);
+      } else {
+        upd[field]=parseFloat(val)||0;
+      }
+      return upd;
+    });
+    setMats(n);saveMatBuy(n);
+  }
+  function resetAll(){
+    if(!confirm('Reset all quantities to empty?'))return;
+    var n=mats.map(function(m){return Object.assign({},m,{qty:''});});
+    setMats(n);saveMatBuy(n);
+  }
+  function resetPrices(){
+    if(!confirm('Reset all prices to defaults?'))return;
+    var n=mats.map(function(m){
+      var def=DEFAULT_MATS.find(function(d){return d.id===m.id;});
+      return Object.assign({},m,{price:def?def.price:m.price});
+    });
+    setMats(n);saveMatBuy(n);
+  }
+
+  // Group by category
+  var categories=['Uncut Gems','Cut Gems','Metals'];
+  var grandTotal=mats.reduce(function(s,m){return s+(parseInt(m.qty)||0)*(m.price||0);},0);
+  var activeItems=mats.filter(function(m){return m.qty!==''&&parseInt(m.qty)>0;});
+
+  return h('div',null,
+    // Header bar
+    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,marginBottom:20}},
+      h('div',{style:{display:'flex',gap:8}},
+        h('button',{className:'btn btn-ghost btn-sm',onClick:resetAll},'\u21ba Reset Quantities'),
+        h('button',{className:'btn btn-ghost btn-sm',onClick:resetPrices},'\u21ba Reset Prices')
+      )
+    ),
+
+    // Category sections
+    categories.map(function(cat){
+      var items=mats.filter(function(m){return m.category===cat;});
+      var catTotal=items.reduce(function(s,m){return s+(m.qty||0)*(m.price||0);},0);
+      return h('div',{key:cat,style:{marginBottom:20}},
+        h('div',{className:'sh'},
+          h('h2',null,cat),
+          catTotal>0&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:10,color:'var(--gold-light)',fontWeight:600}},fmt(catTotal)),
+          h('div',{className:'sh-line'})
+        ),
+        h('div',{style:{background:'var(--onyx-mid)',border:'1px solid var(--onyx-border)',borderRadius:6,overflow:'hidden'}},
+          // Table header
+          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 110px 110px 110px',gap:0,padding:'6px 14px',borderBottom:'1px solid var(--onyx-border)',background:'rgba(255,255,255,.02)'}},
+            h('span',{style:{fontFamily:'Cinzel,serif',fontSize:8,letterSpacing:'.13em',textTransform:'uppercase',color:'var(--txm)'}},'Material'),
+            h('span',{style:{fontFamily:'Cinzel,serif',fontSize:8,letterSpacing:'.13em',textTransform:'uppercase',color:'var(--txm)',textAlign:'right'}},'Unit Price'),
+            h('span',{style:{fontFamily:'Cinzel,serif',fontSize:8,letterSpacing:'.13em',textTransform:'uppercase',color:'var(--txm)',textAlign:'center'}},'Quantity'),
+            h('span',{style:{fontFamily:'Cinzel,serif',fontSize:8,letterSpacing:'.13em',textTransform:'uppercase',color:'var(--txm)',textAlign:'right'}},'Subtotal')
+          ),
+          items.map(function(mat,i){
+            var sub=(parseInt(mat.qty)||0)*(mat.price||0);
+            var hasQty=mat.qty!==''&&parseInt(mat.qty)>0;
+            return h('div',{key:mat.id,style:{
+              display:'grid',gridTemplateColumns:'1fr 110px 110px 110px',gap:0,
+              padding:'9px 14px',
+              borderBottom:i<items.length-1?'1px solid rgba(255,255,255,.04)':'none',
+              background:hasQty?'rgba(201,151,74,.04)':'transparent',
+              transition:'background .15s',
+              alignItems:'center'
+            }},
+              // Name
+              h('div',{style:{display:'flex',alignItems:'center',gap:7}},
+                h('div',{className:'gdot '+gemCls(mat.name)}),
+                h('span',{style:{fontSize:14,fontWeight:hasQty?500:400,color:hasQty?'var(--tx)':'var(--tx)'}},mat.name)
+              ),
+              // Price (editable)
+              h('div',{style:{textAlign:'right'}},
+                editPrice===mat.id
+                  ?h('input',{type:'number',min:0,step:1,value:mat.price,autoFocus:true,
+                      onChange:function(e){update(mat.id,'price',e.target.value);},
+                      onBlur:function(){setEditPrice(null);},
+                      onKeyDown:function(e){if(e.key==='Enter')setEditPrice(null);},
+                      style:{width:90,fontSize:13,textAlign:'right',background:'var(--onyx-light)',color:'var(--tx)',border:'1px solid var(--gold)',borderRadius:4,padding:'3px 6px'}})
+                  :h('span',{style:{fontSize:13,color:'var(--txm)',cursor:'pointer',borderBottom:'1px dashed rgba(201,151,74,.3)',paddingBottom:1},
+                      onClick:function(){setEditPrice(mat.id);},
+                      title:'Click to edit price'},
+                      fmt(mat.price))
+              ),
+              // Quantity
+              h('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:4}},
+                h('button',{style:{width:24,height:24,borderRadius:4,border:'1px solid var(--onyx-border)',background:'transparent',cursor:'pointer',color:'var(--txm)',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',transition:'all .13s'},
+                  onClick:function(){update(mat.id,'qty',Math.max(0,(parseInt(mat.qty)||0)-1));},
+                  onMouseOver:function(e){e.currentTarget.style.borderColor='var(--gold)';e.currentTarget.style.color='var(--gold)';},
+                  onMouseOut:function(e){e.currentTarget.style.borderColor='var(--onyx-border)';e.currentTarget.style.color='var(--txm)';}}
+                ,'\u2212'),
+                h('input',{type:'number',min:0,step:1,value:mat.qty,placeholder:'0',
+                  onChange:function(e){update(mat.id,'qty',e.target.value);},
+                  style:{width:52,fontSize:14,textAlign:'center',background:'var(--onyx-light)',color:'var(--tx)',border:'1px solid var(--onyx-border)',borderRadius:4,padding:'3px 4px',fontVariantNumeric:'tabular-nums'}}),
+                h('button',{style:{width:24,height:24,borderRadius:4,border:'1px solid var(--onyx-border)',background:'transparent',cursor:'pointer',color:'var(--txm)',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',transition:'all .13s'},
+                  onClick:function(){update(mat.id,'qty',(parseInt(mat.qty)||0)+1);},
+                  onMouseOver:function(e){e.currentTarget.style.borderColor='var(--gold)';e.currentTarget.style.color='var(--gold)';},
+                  onMouseOut:function(e){e.currentTarget.style.borderColor='var(--onyx-border)';e.currentTarget.style.color='var(--txm)';}}
+                ,'+')
+              ),
+              // Subtotal
+              h('div',{style:{textAlign:'right',fontVariantNumeric:'tabular-nums',fontSize:13,color:hasQty?'var(--gold-light)':'var(--txm)',fontWeight:hasQty?600:400}},
+                hasQty?fmt(sub):'\u2014'
+              )
+            );
+          })
+        )
+      );
+    }),
+
+    // Summary panel — only shown when something has a qty
+    activeItems.length>0&&h('div',{style:{background:'var(--onyx-mid)',border:'1px solid rgba(201,151,74,.3)',borderRadius:6,padding:'16px 18px',marginTop:4}},
+      h('div',{style:{fontFamily:'Cinzel,serif',fontSize:10,fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--gold)',marginBottom:12}},'Purchase Summary'),
+      activeItems.map(function(m){
+        return h('div',{key:m.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,.04)'}},
+          h('span',{style:{fontSize:13,color:'var(--txm)'}},m.name+' \u00d7 '+parseInt(m.qty)),
+          h('span',{style:{fontSize:13,fontVariantNumeric:'tabular-nums'}},fmt((parseInt(m.qty)||0)*(m.price||0)))
+        );
+      }),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',paddingTop:12,borderTop:'1px solid rgba(201,151,74,.25)',marginTop:6}},
+        h('span',{style:{fontFamily:'Cinzel,serif',fontSize:11,fontWeight:600,letterSpacing:'.1em',textTransform:'uppercase',color:'var(--gold-light)'}},'Total'),
+        h('span',{style:{fontFamily:'Cinzel,serif',fontSize:22,fontWeight:600,color:'var(--gold-light)'}},fmt(grandTotal))
+      )
+    )
+  );
+}
 function App(){
   var tabState=useState('db'),setTab=tabState[1]; var tab=tabState[0];
   var dbState=useState(function(){return loadDB();}),setDb=dbState[1]; var db=dbState[0];
@@ -1369,14 +1749,16 @@ function App(){
       )
     ),
     h('div',{className:'nav'},
-      [['db','\u25c6 Database'],['recipe','\u25c7 Full Recipe'],['sales','\u2261 Sales']].map(function(pair){
+      [['db','\u25c6 Database'],['recipe','\u25c7 Full Recipe'],['sales','\u2261 Sales'],['orders','\u25d0 Pending Orders'],['buying','\u25a6 Material Buying']].map(function(pair){
         return h('button',{key:pair[0],className:'ntab'+(tab===pair[0]?' on':''),onClick:function(){setTab(pair[0]);}},pair[1]);
       })
     ),
     h('div',{className:'main'},
       tab==='db'&&h(DatabaseTab,{db:db,setDb:setDb,onViewRecipe:openRecipe}),
       tab==='recipe'&&h(RecipeTab,{db:db}),
-      tab==='sales'&&h(SalesTab,{db:db}),
+      tab==='sales'&&h(SalesTab,{db:db,onCreateOrder:function(){setTab('orders');}}),
+      tab==='orders'&&h(PendingOrdersTab,{db:db}),
+      tab==='buying'&&h(MatBuyTab,null),
       showModal&&h(RecipeModal,{ringId:recipeId,db:db,onClose:function(){setShowModal(false);}})
     )
   );
