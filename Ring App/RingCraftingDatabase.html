@@ -487,12 +487,12 @@ const DEFAULT_DB={
   ],
   rings:[
     {id:'1',name:'Ring Wax Mold',desc:'',labor:0,salePrice:0,comps:[
-      {id:'c1',name:'Steel',qty:5,unit:'pcs',cost:90,siId:null,ringId:null},
+      {id:'c1',name:'Steel',qty:5,unit:'pcs',cost:135,siId:null,ringId:null},
       {id:'c2',name:'Bee Wax',qty:20,unit:'pcs',cost:85,siId:null,ringId:null},
       {id:'c3',name:'Ceramics',qty:5,unit:'pcs',cost:25,siId:null,ringId:null}
     ]},
     {id:'2',name:'Ring Plaster',desc:'',labor:0,salePrice:0,comps:[
-      {id:'p1',name:'Aluminum',qty:8,unit:'pcs',cost:90,siId:null,ringId:null},
+      {id:'p1',name:'Aluminum',qty:8,unit:'pcs',cost:115,siId:null,ringId:null},
       {id:'p2',name:'Silver Powder',qty:15,unit:'g',cost:0,siId:'si1',ringId:null},
       {id:'p3',name:'Ceramics',qty:3,unit:'pcs',cost:25,siId:null,ringId:null},
       {id:'p4',name:'Water Bottle',qty:2,unit:'pcs',cost:2,siId:null,ringId:null},
@@ -512,15 +512,23 @@ const DEFAULT_DB={
     {id:'9',name:'Onyx Ring',desc:'',labor:0,salePrice:22500,comps:[...bC('or'),{id:'or4',name:'Onyx',qty:15,unit:'pcs',cost:75,siId:null,ringId:null}]},
     {id:'10',name:'Ring Repair Kit',desc:'',labor:0,salePrice:18000,comps:[
       {id:'rk1', name:'Glass',        qty:65,unit:'pcs',cost:5,   siId:null,ringId:null},
-      {id:'rk2', name:'Steel',        qty:20,unit:'pcs',cost:90, siId:null,ringId:null},
+      {id:'rk2', name:'Steel',        qty:20,unit:'pcs',cost:135, siId:null,ringId:null},
       {id:'rk3', name:'Silver Powder',qty:2, unit:'g',  cost:0,   siId:'si1',ringId:null},
       {id:'rk4', name:'Rubber',       qty:65,unit:'pcs',cost:10,  siId:null,ringId:null},
       {id:'rk5', name:'Ceramics',     qty:2, unit:'pcs',cost:25,  siId:null,ringId:null},
       {id:'rk6', name:'Metal Scrap',  qty:5, unit:'pcs',cost:75,  siId:null,ringId:null},
       {id:'rk7', name:'Plastic',      qty:65,unit:'pcs',cost:10,  siId:null,ringId:null},
       {id:'rk8', name:'Ring Base',    qty:1, unit:'pcs',cost:0,   siId:null,ringId:'3'},
-      {id:'rk9', name:'Aluminum',     qty:20,unit:'pcs',cost:90,  siId:null,ringId:null},
+      {id:'rk9', name:'Aluminum',     qty:20,unit:'pcs',cost:115,  siId:null,ringId:null},
       {id:'rk10',name:'Electronics',  qty:5, unit:'pcs',cost:75,  siId:null,ringId:null}
+    ]},
+    {id:'11',name:'Advanced Lockpick',desc:'',labor:0,salePrice:4000,bulkQty:3,bulkPrice:3500,comps:[
+      {id:'al1',name:'Steel',      qty:5, unit:'pcs',cost:135, siId:null,ringId:null},
+      {id:'al2',name:'Aluminum',   qty:10,unit:'pcs',cost:115, siId:null,ringId:null},
+      {id:'al3',name:'Metal Scrap',qty:1, unit:'pcs',cost:75, siId:null,ringId:null},
+      {id:'al4',name:'Plastic',    qty:45,unit:'pcs',cost:10, siId:null,ringId:null},
+      {id:'al5',name:'Rubber',     qty:45,unit:'pcs',cost:10, siId:null,ringId:null},
+      {id:'al6',name:'Bobby Pins', qty:4, unit:'pcs',cost:88, siId:null,ringId:null}
     ]}
   ]
 };
@@ -538,6 +546,11 @@ function compCost(c,sm,rm){
 function ringCost(ring,sm,rm){
   if(!ring)return 0;
   return ring.comps.reduce(function(s,c){return s+(+c.qty||0)*compCost(c,sm,rm);},0)+(+ring.labor||0);
+}
+function effectiveSalePrice(ring,qty){
+  if(!ring||!ring.salePrice)return 0;
+  if(ring.bulkQty&&ring.bulkPrice&&qty>=(ring.bulkQty))return ring.bulkPrice;
+  return ring.salePrice;
 }
 function makeMaps(db){
   return {
@@ -607,6 +620,11 @@ function saveDB(db){try{localStorage.setItem(DB_KEY,JSON.stringify(db));}catch(e
 function loadSales(){try{var r=localStorage.getItem(SALES_KEY);return r?JSON.parse(r):{orders:[],globalSupplied:[]};}catch(e){return {orders:[],globalSupplied:[]};}}
 function saveSales(s){try{localStorage.setItem(SALES_KEY,JSON.stringify(s));}catch(e){}}
 
+// Override unit costs for customer-supplied materials (what customer pays vs what you pay)
+var CUSTOMER_SUPPLY_PRICES={
+  'Steel':90,
+  'Aluminum':90
+};
 // ── shared UI ────────────────────────────────────────────────────────────
 function GemDot(props){return h('div',{className:'gdot '+gemCls(props.name),style:props.style});}
 function UnitSel(props){return h('select',{value:props.value,onChange:props.onChange,style:props.style},UNITS.map(function(u){return h('option',{key:u},u);}));}
@@ -1182,7 +1200,7 @@ function SalesTab(props){
   // Cost calculation uses ONLY manually-added gs items
   var totalSaving=gs.reduce(function(s,x){return s+(+x.qty||0)*(+x.unitCost||0);},0);
   var grandFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm)*(o.qty||1):0);},0);
-  var grandSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice*(o.qty||1):0);},0);
+  var grandSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?effectiveSalePrice(r,o.qty||1)*(o.qty||1):0);},0);
   var grandYours=Math.max(0,grandFull-totalSaving);
   var adjustedSale=Math.max(0,grandSale-totalSaving);
   var commission=adjustedSale*0.03;
@@ -1198,7 +1216,11 @@ function SalesTab(props){
     return Object.values(map).sort(function(a,b){return a.name.localeCompare(b.name);});
   },[orders,rm,sm]);
 
-  function lookupCost(name){var m=allMats.find(function(x){return x.name.toLowerCase()===name.toLowerCase();});return m?m.unitCost:0;}
+  function lookupCost(name){
+    if(CUSTOMER_SUPPLY_PRICES.hasOwnProperty(name))return CUSTOMER_SUPPLY_PRICES[name];
+    var m=allMats.find(function(x){return x.name.toLowerCase()===name.toLowerCase();});
+    return m?m.unitCost:0;
+  }
 
   var gsNameState=useState(''),setGsName=gsNameState[1]; var gsName=gsNameState[0];
   var gsQtyState=useState(''),setGsQty=gsQtyState[1]; var gsQty=gsQtyState[0];
@@ -1226,7 +1248,7 @@ function SalesTab(props){
     if(!hasRings){alert('No rings selected.');return;}
     // Snapshot current calculations
     var snapFull=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?ringCost(r,sm,rm)*(o.qty||1):0);},0);
-    var snapSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r&&r.salePrice?r.salePrice*(o.qty||1):0);},0);
+    var snapSale=orders.reduce(function(s,o){var r=rm[o.ringId];return s+(r?effectiveSalePrice(r,o.qty||1)*(o.qty||1):0);},0);
     var snapSaving=gs.reduce(function(s,x){return s+(+x.qty||0)*(+x.unitCost||0);},0);
     var snapYours=Math.max(0,snapFull-snapSaving);
     var snapAdj=Math.max(0,snapSale-snapSaving);
@@ -1272,12 +1294,18 @@ function SalesTab(props){
           var orderQty=order.qty||1;
           var unitCost=ring?ringCost(ring,sm,rm):0;
           var orderTotal=unitCost*orderQty;
+          var effPrice=ring?effectiveSalePrice(ring,orderQty):0;
+          var isBulk=ring&&ring.bulkQty&&ring.bulkPrice&&orderQty>=(ring.bulkQty);
           var mats=ring?buildFlatTree(ring,sm,rm):[];
           var rOpen=!!ro[order.id];
           return h('div',{key:order.id,className:'oc'},
             h('div',{className:'oc-hdr'},
               h('span',{className:'oc-num'},'Item '+(idx+1)),
-              h('span',{className:'oc-name'},ring?ring.name:'Select a ring'),
+              h('div',{style:{flex:1,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}},
+                h('span',{className:'oc-name'},ring?ring.name:'Select a ring'),
+                isBulk&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.08em',textTransform:'uppercase',background:'rgba(106,201,74,.15)',color:'#8AE064',border:'1px solid rgba(106,201,74,.25)',padding:'2px 7px',borderRadius:100}},'Bulk Rate'),
+                ring&&ring.bulkQty&&!isBulk&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.07em',textTransform:'uppercase',background:'rgba(201,151,74,.08)',color:'var(--txm)',border:'1px solid var(--onyx-border)',padding:'2px 7px',borderRadius:100}},ring.bulkQty+'+ = '+fmt(ring.bulkPrice)+' ea')
+              ),
               ring&&h('span',{className:'oc-cpill'},orderQty>1?orderQty+' \u00d7 '+fmt(unitCost)+' = '+fmt(orderTotal):fmt(unitCost)),
               h('button',{className:'ib d',style:{marginLeft:8},onClick:function(){removeOrder(order.id);}},'\u2715')
             ),
@@ -1371,8 +1399,10 @@ function SalesTab(props){
           var r=rm[o.ringId];
           var oq=o.qty||1;
           var oc=r?ringCost(r,sm,rm)*oq:0;
+          var ep=r?effectiveSalePrice(r,oq):0;
+          var isBulk=r&&r.bulkQty&&r.bulkPrice&&oq>=(r.bulkQty);
           return r&&h('div',{key:o.id,className:'oq-row'},
-            h('span',{className:'oq-lbl'},'Item '+(i+1)+' \u2014 '+r.name+(oq>1?' \u00d7 '+oq:'')),
+            h('span',{className:'oq-lbl'},'Item '+(i+1)+' \u2014 '+r.name+(oq>1?' \u00d7 '+oq:'')+(isBulk?' (bulk)':'')),
             h('span',{className:'oq-val'},fmt(oc))
           );
         }).filter(Boolean),
@@ -1393,14 +1423,27 @@ function SalesTab(props){
         ),
         grandSale>0&&h('div',null,
           h('hr',{className:'fd'}),
-          h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--gold)'}},'Listed sale price'),h('span',{className:'oq-val',style:{color:'var(--gold-light)'}},fmt(grandSale))),
+          h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--gold)'}},
+            'Listed sale price'+(orders.some(function(o){var r=rm[o.ringId];return r&&r.bulkQty&&(o.qty||1)>=(r.bulkQty);})?'':'')),
+            h('span',{className:'oq-val',style:{color:'var(--gold-light)'}},
+              fmt(grandSale),
+              orders.some(function(o){var r=rm[o.ringId];return r&&r.bulkQty&&(o.qty||1)>=(r.bulkQty);})&&h('span',{style:{fontFamily:'Cinzel,serif',fontSize:9,letterSpacing:'.07em',textTransform:'uppercase',background:'rgba(106,201,74,.15)',color:'#8AE064',border:'1px solid rgba(106,201,74,.25)',padding:'1px 6px',borderRadius:100,marginLeft:7}},'Bulk Rate')
+            )
+          ),
           totalSaving>0&&h('div',{className:'oq-row'},h('span',{className:'oq-lbl oq-green'},'\u2212 Customer supplied materials'),h('span',{className:'oq-val oq-green'},'-'+fmt(totalSaving))),
-          h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission fee'),h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(commission))),
           h('div',{className:'oq-tot',style:{background:'rgba(106,201,74,.07)',border:'1px solid rgba(106,201,74,.18)',marginTop:6}},
             h('span',{className:'oq-tot-lbl',style:{color:'#8AE064'}},'Total Cost Owed to You'),
-            h('span',{className:'oq-tot-val',style:{color:'#8AE064'}},fmt(netSale))
+            h('span',{className:'oq-tot-val',style:{color:'#8AE064'}},fmt(adjustedSale))
           ),
-          h('div',{className:'oq-row',style:{marginTop:5}},h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Your crafting cost'),h('span',{className:'oq-val',style:{fontSize:12}},fmt(grandYours))),
+          h('div',{className:'oq-row',style:{marginTop:8}},
+            h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission fee'),
+            h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(commission))
+          ),
+          h('div',{className:'oq-row'},
+            h('span',{className:'oq-lbl',style:{fontWeight:500}},'Your net payout'),
+            h('span',{className:'oq-val',style:{fontWeight:500}},fmt(netSale))
+          ),
+          h('div',{className:'oq-row',style:{marginTop:4}},h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Your crafting cost'),h('span',{className:'oq-val',style:{fontSize:12}},fmt(grandYours))),
           h('div',{className:'oq-row'},
             h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Profit after commission'),
             h('span',{className:'oq-val',style:{fontSize:12,color:profit>=0?'#8AE064':'var(--ruby)'}},( profit>=0?'+':'')+fmt(profit))
@@ -1522,11 +1565,12 @@ function PendingOrdersTab(props){
             h('div',{style:{borderTop:'1px solid rgba(255,255,255,.06)',margin:'6px 0'}}),
             h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--gold)'}},'Listed sale price'),h('span',{className:'oq-val',style:{color:'var(--gold-light)'}},fmt(order.grandSale))),
             order.totalSaving>0&&h('div',{className:'oq-row'},h('span',{className:'oq-lbl oq-green'},'\u2212 Supplied deduction'),h('span',{className:'oq-val oq-green'},'-'+fmt(order.totalSaving))),
-            h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission'),h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(order.commission))),
             h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',borderRadius:4,background:'rgba(106,201,74,.07)',border:'1px solid rgba(106,201,74,.18)',marginTop:6}},
               h('span',{style:{fontFamily:'Cinzel,serif',fontSize:10,fontWeight:600,letterSpacing:'.1em',textTransform:'uppercase',color:'#8AE064'}},'Total Owed to You'),
-              h('span',{style:{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:600,color:'#8AE064'}},fmt(order.netSale))
+              h('span',{style:{fontFamily:'Cinzel,serif',fontSize:16,fontWeight:600,color:'#8AE064'}},fmt(Math.max(0,order.grandSale-order.totalSaving)))
             ),
+            h('div',{className:'oq-row',style:{marginTop:8}},h('span',{className:'oq-lbl',style:{color:'var(--ruby)'}},'− 3% Commission'),h('span',{className:'oq-val',style:{color:'var(--ruby)'}},'-'+fmt(order.commission))),
+            h('div',{className:'oq-row'},h('span',{className:'oq-lbl',style:{fontWeight:500}},'Your net payout'),h('span',{className:'oq-val',style:{fontWeight:500}},fmt(order.netSale))),
             h('div',{className:'oq-row',style:{marginTop:4}},h('span',{className:'oq-lbl',style:{fontSize:12,color:'var(--txm)'}},'Profit after commission'),h('span',{className:'oq-val',style:{fontSize:12,color:order.profit>=0?'#8AE064':'var(--ruby)'}},( order.profit>=0?'+':'')+fmt(order.profit)))
           )
         ),
@@ -1591,6 +1635,8 @@ var DEFAULT_MATS=[
   {id:'mb14',category:'Cut Gems',   name:'Onyx',              price:75,  qty:''},
   {id:'mb15',category:'Metals',     name:'Gold Ore',          price:100, qty:''},
   {id:'mb16',category:'Metals',     name:'Gold Bar',          price:300, qty:''},
+  {id:'mb17',category:'Metals',     name:'Steel',             price:125, qty:''},
+  {id:'mb18',category:'Metals',     name:'Aluminum',          price:110, qty:''},
 ];
 function loadMatBuy(){try{var r=localStorage.getItem(MAT_BUY_KEY);return r?JSON.parse(r):DEFAULT_MATS;}catch(e){return DEFAULT_MATS;}}
 function saveMatBuy(m){try{localStorage.setItem(MAT_BUY_KEY,JSON.stringify(m));}catch(e){}}
